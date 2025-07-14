@@ -9,26 +9,28 @@ import SwiftUI
 
 struct ContentView: View {
     @StateObject var dashboardViewModel: DashboardViewModel
-    @StateObject var profileViewModel: ProfileViewModel
-    
+    @State private var showSplash = true
+
     var body: some View {
-        TabView {
-            DashboardView(viewModel: dashboardViewModel)
-                .tabItem {
-                    Label("Dashboard", systemImage: "map")
-                }
-            
-            ProfileView(viewModel: profileViewModel)
-                .tabItem {
-                    Label("Profile", systemImage: "person")
-                }
+        ZStack {
+            if showSplash {
+                SplashScreenView()
+                    .transition(.opacity)
+            } else {
+                DashboardView(viewModel: dashboardViewModel)
+            }
+        }
+        .onAppear {
+            // Hide splash after 1.5 seconds
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                withAnimation { showSplash = false }
+            }
         }
     }
 }
 
 #Preview {
     ContentView(
-        dashboardViewModel: DashboardViewModel(locationService: LocationService()),
-        profileViewModel: ProfileViewModel()
+        dashboardViewModel: DashboardViewModel(locationService: LocationService())
     )
 }
