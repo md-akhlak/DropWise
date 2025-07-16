@@ -18,8 +18,7 @@ struct DropMeApp: App {
                 dashboardViewModel: DashboardViewModel(
                     locationService: locationService,
                     routeOptimizationService: routeOptimizationService
-                ),
-                profileViewModel: ProfileViewModel()
+                )
             )
         }
     }

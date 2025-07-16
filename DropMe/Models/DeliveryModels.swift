@@ -44,7 +44,6 @@ struct User: Identifiable {
 struct Delivery: Identifiable {
     let id: UUID
     var address: String
-    var coordinates: CLLocationCoordinate2D
     var status: DeliveryStatus
     var customerName: String
     var customerPhone: String
@@ -53,22 +52,46 @@ struct Delivery: Identifiable {
     var shortAddress: String?
     weak var viewModel: AnyObject?
     
-    // Base location (Sector 62 Noida)
-    static let baseLocation = CLLocationCoordinate2D(latitude: 28.6266, longitude: 77.3649)
+    // Base location (Greater Noida - Knowledge Park)
+    static let baseLocation = CLLocationCoordinate2D(latitude: 28.4744, longitude: 77.5040)
     
-    // Fixed distance from base location
-    var distanceFromBase: Double {
-        let deliveryLocation = CLLocation(latitude: coordinates.latitude, longitude: coordinates.longitude)
-        let baseLocationCL = CLLocation(latitude: Self.baseLocation.latitude, longitude: Self.baseLocation.longitude)
-        return deliveryLocation.distance(from: baseLocationCL) / 1000.0 // Convert to kilometers
+    // New: Geocode address to coordinates on-the-fly
+    func geocodeCoordinates(completion: @escaping (CLLocationCoordinate2D?) -> Void) {
+        let geocoder = CLGeocoder()
+        geocoder.geocodeAddressString(address) { placemarks, error in
+            if let location = placemarks?.first?.location {
+                completion(location.coordinate)
+            } else {
+                completion(nil)
+            }
+        }
     }
     
-    // Dynamic distance from current location (for route optimization)
-    func distanceFrom(_ location: CLLocationCoordinate2D?) -> Double? {
-        guard let location = location else { return nil }
-        let deliveryLocation = CLLocation(latitude: coordinates.latitude, longitude: coordinates.longitude)
-        let currentLocation = CLLocation(latitude: location.latitude, longitude: location.longitude)
-        return deliveryLocation.distance(from: currentLocation) / 1000.0 // Convert to kilometers
+    // Fixed distance from base location (async)
+    func distanceFromBase(completion: @escaping (Double?) -> Void) {
+        geocodeCoordinates { coordinates in
+            guard let coordinates = coordinates else {
+                completion(nil)
+                return
+            }
+            let deliveryLocation = CLLocation(latitude: coordinates.latitude, longitude: coordinates.longitude)
+            let baseLocationCL = CLLocation(latitude: Self.baseLocation.latitude, longitude: Self.baseLocation.longitude)
+            completion(deliveryLocation.distance(from: baseLocationCL) / 1000.0) // km
+        }
+    }
+    
+    // Dynamic distance from current location (for route optimization, async)
+    func distanceFrom(_ location: CLLocationCoordinate2D?, completion: @escaping (Double?) -> Void) {
+        guard let location = location else { completion(nil); return }
+        geocodeCoordinates { coordinates in
+            guard let coordinates = coordinates else {
+                completion(nil)
+                return
+            }
+            let deliveryLocation = CLLocation(latitude: coordinates.latitude, longitude: coordinates.longitude)
+            let currentLocation = CLLocation(latitude: location.latitude, longitude: location.longitude)
+            completion(deliveryLocation.distance(from: currentLocation) / 1000.0) // km
+        }
     }
 }
 

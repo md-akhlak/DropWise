@@ -1,38 +1,87 @@
 import SwiftUI
+import UniformTypeIdentifiers
+
+struct SingleDestinationSheet: Identifiable {
+    let delivery: Delivery
+    let sequence: Int
+    var id: UUID { delivery.id }
+}
 
 struct DashboardView: View {
     @StateObject var viewModel: DashboardViewModel
-    @State private var showingDeliveryFlow = false
+    @State private var showMap = false
+    @State private var showDocumentPicker = false
+    @State private var singleDestination: SingleDestinationSheet? = nil
     
     var body: some View {
-        VStack(spacing: 0) {
-            MapView(
-                locationService: viewModel.locationService,
-                deliveries: viewModel.deliveries,
-                optimizedRoute: viewModel.optimizedRoute,
-                onOptimizeRoute: {
-                    viewModel.optimizeRoute()
+        NavigationView {
+            VStack(spacing: 0) {
+                // Header
+                HStack {
+                    Text("Deliveries")
+                        .font(.largeTitle)
+                        .fontWeight(.bold)
+                    Spacer()
+                }
+                .padding()
+                
+                if viewModel.isOptimizing {
+                    ProgressView("Optimizing route...")
+                        .padding()
+                }
+                
+                DeliveryListView(
+                    deliveries: viewModel.optimizedRoute ?? viewModel.deliveries,
+                    optimizedRoute: viewModel.optimizedRoute,
+                    onDeliverySelected: { delivery in
+                        let route = viewModel.optimizedRoute ?? viewModel.deliveries
+                        if let idx = route.firstIndex(where: { $0.id == delivery.id }) {
+                            singleDestination = SingleDestinationSheet(delivery: delivery, sequence: idx + 1)
+                        }
+                    },
+                    currentLocation: (viewModel.locationService as? LocationService)?.currentLocation
+                )
+            }
+            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarItems(
+                leading: Button(action: { showDocumentPicker = true }) {
+                    HStack {
+                        Image(systemName: "tray.and.arrow.down.fill")
+                        Text("Import CSV")
+                    }
+                },
+                trailing: Button(action: { showMap = true }) {
+                    Image(systemName: "map")
+                        .font(.title2)
                 }
             )
-            .frame(height: UIScreen.main.bounds.height / 3)
-            
-            if viewModel.isOptimizing {
-                ProgressView("Optimizing route...")
-                    .padding()
+            .sheet(isPresented: $showMap) {
+                MapScreen(
+                    deliveries: viewModel.deliveries,
+                    optimizedRoute: viewModel.optimizedRoute,
+                    userLocation: (viewModel.locationService as? LocationService)?.currentLocation,
+                    singleSequence: nil
+                )
             }
-            
-            DeliveryListView(
-                deliveries: viewModel.optimizedRoute ?? viewModel.deliveries,
-                onDeliverySelected: { delivery in
-                    viewModel.selectDelivery(delivery)
-                    showingDeliveryFlow = true
-                },
-                currentLocation: (viewModel.locationService as? LocationService)?.currentLocation
-            )
-        }
-        .sheet(isPresented: $showingDeliveryFlow) {
-            if let selectedDelivery = viewModel.selectedDelivery {
-                DeliveryFlowView(delivery: selectedDelivery, viewModel: viewModel)
+            .sheet(item: $singleDestination) { sheet in
+                MapScreen(
+                    deliveries: [sheet.delivery],
+                    optimizedRoute: nil,
+                    userLocation: (viewModel.locationService as? LocationService)?.currentLocation,
+                    singleSequence: sheet.sequence
+                )
+            }
+            .sheet(isPresented: $showDocumentPicker) {
+                DocumentPicker { url in
+                    if let url = url {
+                        viewModel.importCSV(from: url)
+                        viewModel.optimizeRouteAndUpdateDeliveries()
+                    }
+                }
+            }
+            .onAppear {
+                (viewModel.locationService as? LocationService)?.requestLocationPermission()
+                viewModel.optimizeRouteAndUpdateDeliveries()
             }
         }
     }
@@ -126,7 +175,7 @@ struct DeliveryFlowView: View {
                 switch currentStep {
                 case 0:
                     OptimizeRouteView(onOptimize: {
-                        viewModel.optimizeRoute()
+                        viewModel.optimizeRouteAndUpdateDeliveries()
                         // Move to next step after optimization is complete
                         DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {
                             currentStep = 1
@@ -147,6 +196,33 @@ struct DeliveryFlowView: View {
             .navigationBarItems(leading: Button("Cancel") {
                 dismiss()
             })
+        }
+    }
+}
+
+struct DocumentPicker: UIViewControllerRepresentable {
+    var onPick: (URL?) -> Void
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onPick: onPick)
+    }
+    
+    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.commaSeparatedText], asCopy: true)
+        picker.delegate = context.coordinator
+        return picker
+    }
+    
+    func updateUIViewController(_ uiViewController: UIDocumentPickerViewController, context: Context) {}
+    
+    class Coordinator: NSObject, UIDocumentPickerDelegate {
+        let onPick: (URL?) -> Void
+        init(onPick: @escaping (URL?) -> Void) { self.onPick = onPick }
+        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+            onPick(urls.first)
+        }
+        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+            onPick(nil)
         }
     }
 } 
